@@ -1,25 +1,21 @@
-FROM node:18-alpine
+# Use the official pre-built Foundry image
+FROM ghcr.io/foundry-rs/foundry:latest
 
-# Install system dependencies
-RUN apk add --no-cache git curl bash
-
-# Install Foundry
-RUN curl -L https://foundry.paradigm.xyz | bash
-ENV PATH="${PATH}:/root/.foundry/bin"
-RUN foundryup
+# Switch to root to avoid permission denied errors
+USER root
 
 WORKDIR /app
 
 # Copy project files
 COPY . .
 
-# Install OpenZeppelin and build
-RUN forge install OpenZeppelin/openzeppelin-contracts --no-commit
+# Build the contracts
 RUN forge build
 
-# Set permissions for entrypoint
+# Ensure entrypoint is executable
 RUN chmod +x ./docker/entrypoint.sh
 
+# Expose Anvil's default port
 EXPOSE 8545
 
 ENTRYPOINT ["./docker/entrypoint.sh"]
