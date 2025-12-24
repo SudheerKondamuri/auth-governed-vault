@@ -1,16 +1,33 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract AuthorizationManager {
-    address public immutable AUTH_SIGNER;
+    using ECDSA for bytes32;
 
-    mapping(bytes32 => bool) public usedAuthorization;
+    bytes32 private constant WITHDRAWAL_TYPEHASH = 
+        keccak256("Withdrawal(address vault,address recipient,uint256 amount,uint256 nonce)");
+    
+    bytes32 private immutable DOMAIN_SEPARATOR;
+    address public immutable AUTHORIZED_SIGNER;
 
-    constructor(address signer) {
-        require(signer != address(0), "invalid signer");
-        AUTH_SIGNER = signer;
+    mapping(uint256 => bool) public usedNonces;
+
+    event AuthorizationConsumed(uint256 indexed nonce, address indexed recipient);
+
+    constructor(address _signer) {
+        AUTHORIZED_SIGNER = _signer;
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("SecureVaultSystem")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(this)
+            )
+        );
     }
 
     function verifyAuthorization(
@@ -20,22 +37,19 @@ contract AuthorizationManager {
         uint256 nonce,
         bytes calldata signature
     ) external returns (bool) {
-        bytes32 messageHash = keccak256(
-            abi.encodePacked(block.chainid, vault, recipient, amount, nonce)
+        require(!usedNonces[nonce], "Nonce already used");
+        
+        bytes32 structHash = keccak256(
+            abi.encode(WITHDRAWAL_TYPEHASH, vault, recipient, amount, nonce)
         );
 
-        require(!usedAuthorization[messageHash], "authorization already used");
+        bytes32 digest = MessageHashUtils.toTypedDataHash(DOMAIN_SEPARATOR, structHash);
+        address signer = digest.recover(signature);
 
-        bytes32 ethSignedHash = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
-        );
+        require(signer == AUTHORIZED_SIGNER, "Invalid signature");
 
-        address recoveredSigner = ECDSA.recover(ethSignedHash, signature);
-
-        require(recoveredSigner == AUTH_SIGNER, "invalid signature");
-
-        usedAuthorization[messageHash] = true;
-
+        usedNonces[nonce] = true;
+        emit AuthorizationConsumed(nonce, recipient);
         return true;
     }
 }

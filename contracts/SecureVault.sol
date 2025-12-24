@@ -1,50 +1,49 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.19;
 
-interface IAuthorizationManager {
-    function verifyAuthorization(
-        address vault,
-        address recipient,
-        uint256 amount,
-        uint256 nonce,
-        bytes calldata signature
-    ) external returns (bool);
-}
+import {AuthorizationManager} from "./AuthorizationManager.sol";
 
 contract SecureVault {
-    IAuthorizationManager public immutable authManager;
+    AuthorizationManager public immutable authManager;
+    
+    event Deposited(address indexed sender, uint256 amount);
+    event Withdrawn(address indexed recipient, uint256 amount);
 
-    event Deposit(address indexed from, uint256 amount);
-    event Withdrawal(address indexed to, uint256 amount);
-
-    constructor(address authManagerAddress) {
-        require(authManagerAddress != address(0), "invalid auth manager");
-        authManager = IAuthorizationManager(authManagerAddress);
+    constructor(address _authManager) {
+        authManager = AuthorizationManager(_authManager);
     }
+
+    // Explicitly handle plain Ether transfers
     receive() external payable {
-        emit Deposit(msg.sender, msg.value);
+        emit Deposited(msg.sender, msg.value);
+    }
+
+    // Fallback in case data is sent
+    fallback() external payable {
+        emit Deposited(msg.sender, msg.value);
     }
 
     function withdraw(
-        address recipient,
+        address payable recipient,
         uint256 amount,
         uint256 nonce,
         bytes calldata signature
     ) external {
-        bool ok = authManager.verifyAuthorization(
+        require(address(this).balance >= amount, "Insufficient vault balance");
+
+        bool authorized = authManager.verifyAuthorization(
             address(this),
             recipient,
             amount,
             nonce,
             signature
         );
-        require(ok, "not authorized");
+        
+        require(authorized, "Authorization failed");
 
-        require(address(this).balance >= amount, "insufficient vault balance");
+        (bool success, ) = recipient.call{value: amount}("");
+        require(success, "ETH transfer failed");
 
-        (bool sent, ) = recipient.call{value: amount}("");
-        require(sent, "eth transfer failed");
-
-        emit Withdrawal(recipient, amount);
+        emit Withdrawn(recipient, amount);
     }
 }
