@@ -4,12 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract AuthorizationManager {
-    using ECDSA for bytes32;
-
-   
     address public immutable AUTH_SIGNER;
 
-   
     mapping(bytes32 => bool) public usedAuthorization;
 
     constructor(address signer) {
@@ -25,18 +21,16 @@ contract AuthorizationManager {
         bytes calldata signature
     ) external returns (bool) {
         bytes32 messageHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                vault,
-                recipient,
-                amount,
-                nonce
-            )
+            abi.encodePacked(block.chainid, vault, recipient, amount, nonce)
         );
 
         require(!usedAuthorization[messageHash], "authorization already used");
 
-        address recoveredSigner = messageHash.recover(signature);
+        bytes32 ethSignedHash = keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
+        );
+
+        address recoveredSigner = ECDSA.recover(ethSignedHash, signature);
 
         require(recoveredSigner == AUTH_SIGNER, "invalid signature");
 
