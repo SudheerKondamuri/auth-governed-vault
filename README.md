@@ -1,66 +1,14 @@
-## Foundry
+## Security & Invariant Design
+The system is built on three core security pillars:
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+1. **Separation of Concerns**: The `SecureVault` handles asset custody, while the `AuthorizationManager` handles logic. The Vault cannot move a single Wei without a successful external call to the manager.
+2. **EIP-712 Structured Data**: Authorizations are not just raw hashes; they are structured messages bound to:
+   - **Chain ID**: Prevents replay attacks on other forks/networks.
+   - **Contract Address**: Ensures a signature for one vault cannot be used on another.
+   - **Nonce**: Guarantees each signature is "Single Use Only."
+3. **CEI Pattern**: The system follows the **Check-Effects-Interactions** pattern. Nonces are marked as used *before* any Ether is transferred, eliminating reentrancy risks.
 
-Foundry consists of:
-
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+## Verified Invariants
+- Vault Balance >= 0 (Enforced by EVM math and state checks).
+- Nonce Re-use = Revert (Enforced by `usedNonces` mapping).
+- Invalid Signer = Revert (Enforced by `ECDSA.recover`).
